@@ -5,7 +5,7 @@
 [![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-16%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-18%20Passed-brightgreen.svg)]()
 
 > **Target Hackathon Tracks:**
 > 1. *Primary:* **Agents That Act on Connected Data**
@@ -134,14 +134,17 @@ Open your browser to `http://localhost:8501`.
 
 ## 🧪 Automated Test Suite
 
-AlphaTrace includes 16 automated tests covering:
-- API health and endpoints (`tests/test_health.py`, `tests/test_api.py`)
+AlphaTrace includes 18 automated tests covering:
+- API health and endpoints (`tests/test_health.py`, `tests/test_api.py` including `/health` and `/api/investigations/{id}`)
 - Parameterized Cypher query validation (`tests/test_graph_queries.py`)
 - Deterministic risk formulas and breach thresholds (`tests/test_risk_evaluator.py`)
 - End-to-end agent investigation workflow (`tests/test_investigation.py`)
 - Persistent memory delta comparator (`tests/test_memory.py`)
 
-All 16 tests pass deterministically in under 1 second.
+All 18 tests pass deterministically in under 1 second without warnings:
+```bash
+pytest -q
+```
 
 ---
 
@@ -150,3 +153,13 @@ All 16 tests pass deterministically in under 1 second.
 - **All Data is Synthetic:** All portfolio valuations, tickers, and strategy names are synthetic sample data generated exclusively for demonstration.
 - **No Real Trading Execution:** AlphaTrace does not execute real-money orders or connect to broker execution gateways.
 - **Zero Cypher Injection:** 100% of graph queries utilize parameterized Cypher (`params={...}`). Untrusted user strings are never concatenated into queries.
+- **Simulated Recommendations:** Risk mitigation directives are simulated suggestions for supervisory review, not executed trades.
+- **Statistical Correlation Caveat:** Asset correlations reflect historical and regime co-movement patterns, not deterministic causation or guaranteed losses.
+
+---
+
+## ⚠️ Known Limitations
+
+1. **Synthetic Data Scope:** Data is generated for demonstration of cross-desk risk propagation.
+2. **Model Feed Boundaries:** Real-time Level-2 order book market depth and OTC derivative options delta hedges are currently flagged as identified data gaps rather than live exchange feeds.
+3. **No External Execution:** The system is an analytical decision-support and audit agent; it does not execute orders on exchange matching engines.

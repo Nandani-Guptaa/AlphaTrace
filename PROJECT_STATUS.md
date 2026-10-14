@@ -28,8 +28,8 @@
 ## Test Verification Summary
 
 ```text
-======================== 16 passed, 1 warning in 0.67s ========================
-- test_api.py: 5/5 PASSED
+============================== 18 passed in 0.78s ==============================
+- test_api.py: 7/7 PASSED (including /health root alias and /api/investigations/{id})
 - test_graph_queries.py: 5/5 PASSED
 - test_health.py: 1/1 PASSED
 - test_investigation.py: 2/2 PASSED
@@ -37,12 +37,25 @@
 - test_risk_evaluator.py: 2/2 PASSED
 ```
 
-## Hackathon Demonstration Highlights
+## Verified End-to-End User Journey & Persistence
 
-1. **Concrete Differentiator Proven:**
-   - Isolated strategy analysis gives `Quantum Momentum Alpha` a clean pass.
-   - FalkorDB multi-hop traversal reveals a **$6,220,000 effective correlated cluster exposure** (+24.4% breach of $5.0M limit) driven by Strategy B's $3.5M AVGO position.
-2. **Persistent Investigation Memory Demonstrated:**
-   - Detects that Strategy B escalated AVGO exposure by +191% and regime volatility rose from 18.5 to 34.2 since `INV-2026-BASE-001`.
-3. **Audit-Ready Evidence & Actionable Recommendations:**
-   - Proposes `REDUCE_OR_HEDGE_EXPOSURE` with exact hedge sizing ($1.22M trim or SOXX hedge) and cites historical precedent (`INC-2024-TECH-SQUEEZE`).
+1. **Live API Service Verified**:
+   - `GET /health`: HTTP 200 OK (reports healthy FalkorDB backend and live node count).
+   - `GET /docs`: HTTP 200 OK (FastAPI OpenAPI/Swagger specification accessible).
+2. **Main Investigation Workflow Verified**:
+   - Submitted investigation request for `STRAT-QUANTUM-ALPHA`.
+   - Result: Correctly revealed hidden correlated semiconductor risk ($7.45M effective cluster exposure vs $5.0M limit) and flagged 3 rule breaches.
+   - Evidence chain and simulated recommendation (`REDUCE_OR_HEDGE_EXPOSURE`) populated.
+3. **Database Persistence Verified Across Service Restarts**:
+   - Investigation `INV-5E11D712` written to FalkorDB as a graph node.
+   - API server process was killed and restarted.
+   - Re-queried `GET /api/investigations/INV-5E11D712` from the fresh API process: HTTP 200 OK with full executive summary and structured findings retrieved directly from FalkorDB.
+4. **Streamlit Visual Dashboard Verified**:
+   - Running on `http://localhost:8501`, connected to the backend API.
+
+## Known Limitations
+
+1. **Synthetic Data Only**: All portfolio metrics, tickers, and strategy names are synthetic sample data generated exclusively for demonstration.
+2. **Simulated Suggestions (Non-Execution)**: AlphaTrace produces simulated risk mitigation directives for supervisory risk review; it does not connect to broker execution APIs or execute real-money orders.
+3. **Statistical Correlation vs. Causation**: Statistical correlation reflects historical and regime co-movement patterns rather than guaranteed causation or deterministic losses.
+4. **Model Boundaries (Identified Data Gaps)**: Intra-day Level-2 order book depth and OTC options delta hedges are currently represented as identified data gaps rather than live exchange feeds.

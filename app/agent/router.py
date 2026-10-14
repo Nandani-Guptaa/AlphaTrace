@@ -79,11 +79,11 @@ def run_investigation(request: InvestigationRequest, db=None) -> InvestigationRe
             f"revealing a hidden ${exposures['correlated_incremental']:,.2f} semiconductor cluster exposure across desk boundaries)."
         )
         exec_summary = (
-            f"AlphaTrace graph investigation detected a critical hidden risk in '{strategy['name']}'. "
+            f"AlphaTrace graph investigation detected a critical modeled risk in '{strategy['name']}'. "
             f"While the strategy's direct positions appear compliant in isolation, a 2-hop FalkorDB traversal reveals "
             f"a 0.92 correlation to AVGO ($3.5M exposure held by 'STRAT-SEMI-LONG'). Under the current "
-            f"'{regime.get('label')}' regime, aggregate cluster exposure reaches ${exposures['effective_correlated_exposure']:,.2f}, "
-            f"breaching Rule RR-CONC-01 ($5.0M limit). Similar conditions caused the 2024 Tech Squeeze liquidation cascade."
+            f"'{regime.get('label')}' regime, modeled cluster exposure reaches ${exposures['effective_correlated_exposure']:,.2f}, "
+            f"breaching Rule RR-CONC-01 ($5.0M limit). (Statistical correlation reflects historical co-movement patterns rather than guaranteed causation; all findings are synthetic simulations for risk modeling)."
         )
     else:
         isolated_vs_graph = (

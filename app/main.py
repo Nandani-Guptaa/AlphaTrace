@@ -33,6 +33,7 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
 @app.get("/api/health")
 def health_check() -> Dict[str, Any]:
     """Verify backend and FalkorDB connectivity."""
@@ -180,6 +181,15 @@ def investigate_strategy(request: InvestigationRequest) -> InvestigationReport:
 def list_investigations(limit: int = Query(default=15, le=50)) -> List[Dict[str, Any]]:
     """List historical investigations from graph memory."""
     return queries.get_all_investigations(limit=limit)
+
+
+@app.get("/api/investigations/{investigation_id}")
+def get_investigation(investigation_id: str) -> Dict[str, Any]:
+    """Retrieve a single investigation by ID from graph memory."""
+    inv = queries.get_investigation_by_id(investigation_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Investigation '{investigation_id}' not found.")
+    return inv
 
 
 @app.post("/api/seed")

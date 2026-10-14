@@ -65,9 +65,10 @@ def tool_propose_decision(
         excess = effective_exp - cluster_limit
         action = "REDUCE_OR_HEDGE_EXPOSURE"
         reason = (
-            f"Mandatory action: Aggregate correlated semiconductor cluster exposure is "
-            f"${effective_exp:,.2f}, exceeding the $5.0M limit by ${excess:,.2f}. "
-            f"Recommended steps: 1) Trim direct NVDA position by ${excess:,.2f}, or 2) Execute short SOXX ETF hedge to offset $1.5M cross-desk correlation."
+            f"Simulated Risk Suggestion (Non-Execution): Aggregate correlated semiconductor cluster exposure is modeled at "
+            f"${effective_exp:,.2f}, exceeding the $5.0M portfolio limit by ${excess:,.2f}. "
+            f"(Note: Statistical correlation reflects co-movement under historical regimes, not proof of causation or guaranteed losses. All recommendations are simulated suggestions, not executed trades). "
+            f"Suggested simulated adjustments for review: 1) Model trimming direct NVDA exposure by ${excess:,.2f}, or 2) Model short SOXX ETF hedge to offset modeled cross-desk correlation."
         )
         status = "PENDING"
     elif breaches_count > 0:

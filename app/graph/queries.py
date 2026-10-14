@@ -325,3 +325,35 @@ def get_all_investigations(limit: int = 20, db=None) -> List[Dict[str, Any]]:
             "result_summary": res_data.get("executive_summary", "")
         })
     return history
+
+
+def get_investigation_by_id(investigation_id: str, db=None) -> Optional[Dict[str, Any]]:
+    """Retrieve a single investigation by ID from FalkorDB."""
+    conn = db or get_db()
+    cypher = """
+    MATCH (inv:Investigation {id: $investigation_id})
+    RETURN inv.id AS id, inv.strategy_id AS strategy_id, inv.user_id AS user_id,
+           inv.question AS question, inv.created_at AS created_at, inv.status AS status,
+           inv.result_json AS result_json
+    """
+    rows = conn.query(cypher, {"investigation_id": investigation_id})
+    if not rows:
+        return None
+    r = rows[0]
+    result_data = {}
+    if r[6]:
+        try:
+            result_data = json.loads(r[6])
+        except Exception:
+            result_data = {"raw": r[6]}
+
+    return {
+        "id": r[0],
+        "strategy_id": r[1],
+        "user_id": r[2],
+        "question": r[3],
+        "created_at": r[4],
+        "status": r[5],
+        "result_data": result_data
+    }
+

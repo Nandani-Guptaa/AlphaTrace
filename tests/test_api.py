@@ -43,3 +43,32 @@ def test_api_investigate_endpoint(client):
 def test_api_strategy_not_found(client):
     response = client.get("/api/strategies/STRAT-NON-EXISTENT")
     assert response.status_code == 404
+
+
+def test_api_health_root_alias(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert data["database"]["status"] == "healthy"
+
+
+def test_api_get_investigation_by_id(client):
+    # First create an investigation
+    payload = {
+        "strategy_id": "STRAT-QUANTUM-ALPHA",
+        "question": "Single investigation retrieval test",
+        "user_id": "USR-TEST-01",
+        "compare_with_previous": False
+    }
+    create_resp = client.post("/api/investigate", json=payload)
+    assert create_resp.status_code == 200
+    inv_id = create_resp.json()["id"]
+
+    # Retrieve it by ID
+    get_resp = client.get(f"/api/investigations/{inv_id}")
+    assert get_resp.status_code == 200
+    retrieved = get_resp.json()
+    assert retrieved["id"] == inv_id
+    assert retrieved["strategy_id"] == "STRAT-QUANTUM-ALPHA"
+
