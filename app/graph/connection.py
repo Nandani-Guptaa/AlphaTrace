@@ -45,7 +45,10 @@ class FalkorDBConnection:
                 result = graph.query(cypher)
             return result.result_set if result is not None else []
         except Exception as e:
-            logger.error(f"FalkorDB query failed: {cypher} | params={params} | err={e}")
+            if "already indexed" in str(e).lower():
+                logger.debug(f"Index notice: {cypher} | {e}")
+            else:
+                logger.error(f"FalkorDB query failed: {cypher} | params={params} | err={e}")
             raise
 
     def check_health(self) -> Dict[str, Any]:
