@@ -39,11 +39,15 @@ def build_evidence_chain(
             description=(
                 f"Asset {primary['direct_symbol']} has a {primary['correlation']:.2f} correlation with "
                 f"{primary['correlated_symbol']}, which is held with ${primary['exposure']:,.2f} exposure "
-                f"by Strategy '{primary.get('other_strategy_name')}'. Total effective cluster exposure is ${exposures['effective_correlated_exposure']:,.2f}."
+                f"by Strategy '{primary.get('other_strategy_name')}'. Deduplicated gross cluster notional is "
+                f"${exposures['gross_cluster_notional_usd']:,.2f}; the separate correlation-adjusted stress indicator is "
+                f"${exposures['correlation_adjusted_exposure_usd']:,.2f}."
             ),
             data={
                 "correlated_assets": connected_assets,
-                "effective_correlated_usd": exposures["effective_correlated_exposure"],
+                "gross_cluster_notional_usd": exposures["gross_cluster_notional_usd"],
+                "correlation_adjusted_stress_usd": exposures["correlation_adjusted_exposure_usd"],
+                "aggregation_assumption": "Each connected position_id is counted once; correlation is not treated as notional.",
                 "concentration_ratio": exposures["cluster_concentration_ratio"]
             },
             graph_path=(

@@ -5,7 +5,7 @@
 [![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-18%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-graph--backed-blue.svg)]()
 
 > **Target Hackathon Tracks:**
 > 1. *Primary:* **Agents That Act on Connected Data**
@@ -30,8 +30,8 @@ AlphaTrace traverses multi-hop graph relationships:
 1. `NVDA` -[:CORRELATED_WITH {coefficient: 0.92}]-> `AVGO`.
 2. `AVGO` is held with **$3,500,000 exposure** by peer desk `STRAT-SEMI-LONG` (`Semiconductor Long-Bias`).
 3. Under the active **"High Volatility Dispersion"** market regime, cross-desk asset correlations spike.
-4. **Effective Correlated Cluster Exposure reaches $6,220,000**, breaching codified Rule `RR-CONC-01` ($5.0M limit) by **+$1.22M (+24.4%)**.
-5. Historical graph links (`[:EXPERIENCED]`) prove that an identical correlated squeeze in 2024 sparked a forced liquidation cascade, driving drawdowns to -22%.
+4. The deduplicated **Gross Cluster Notional** is **$7,900,000** ($3.0M direct + $4.9M peer), breaching `RR-CONC-01` ($5.0M) by **$2.9M**. The separately displayed **$7.452M correlation-adjusted stress indicator** is not actual exposure and is not used as the rule input.
+5. Historical graph links (`[:EXPERIENCED]`) provide synthetic precedent context; they do not prove causation or predict a future loss.
 
 ---
 
@@ -86,13 +86,13 @@ AlphaTrace traverses multi-hop graph relationships:
 docker run -d --name alphatrace-falkordb -p 6379:6379 falkordb/falkordb:latest
 ```
 
-### 3. Install Dependencies & Seed Database
+### 3. Verify dependencies and seed the synthetic database
 ```bash
-python -m venv .venv
 .\.venv\Scripts\activate  # On Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
 python scripts/seed_database.py
 ```
+
+`seed_database.py` intentionally clears the selected FalkorDB graph before loading the reproducible synthetic scenario. Do not run it against data you need to keep. The HTTP seed route also requires `?confirm_destructive_reset=true`.
 
 ### 4. Run Automated Health Checks & Tests
 ```bash
@@ -114,6 +114,23 @@ In Terminal 2 (Streamlit Dashboard):
 streamlit run ui/dashboard.py
 ```
 Open your browser to `http://localhost:8501`.
+FastAPI's local OpenAPI documentation is available at `http://localhost:8000/docs`.
+
+### Custom portfolio input
+
+Select **Custom Portfolio** in the dashboard to upload a CSV or enter rows manually. AlphaTrace stores it as a new, isolated strategy and then uses the same investigation endpoint as the demo.
+
+Required CSV fields are `symbol`, `quantity`, and `price`; optional fields are `asset_type` and `sector`.
+
+```csv
+symbol,quantity,price,asset_type,sector
+NVDA,10,180.25,Equity,Technology
+TLT,-5,92.10,ETF,Fixed Income
+```
+
+`quantity` may be negative for a short position, `price` must be finite and greater than zero, and notional is `quantity × price` in assumed USD. Gross exposure sums absolute notionals; net exposure keeps the sign. Exact duplicate rows (same symbol, price, and metadata) are aggregated; conflicting duplicates are rejected so no arbitrary price is chosen. Empty files, missing symbols, zero quantities, and invalid numbers are rejected.
+
+Uploaded portfolios do not overwrite demo nodes or other custom strategies. No correlations, peer positions, market regimes, incidents, or drawdown history are inferred from a CSV. In their absence, relevant rules are returned as `INSUFFICIENT_EVIDENCE`, not passed, and the report does not claim the portfolio is safe.
 
 ---
 
@@ -134,17 +151,19 @@ Open your browser to `http://localhost:8501`.
 
 ## 🧪 Automated Test Suite
 
-AlphaTrace includes 18 automated tests covering:
+AlphaTrace includes graph-backed integration tests and deterministic evaluator regression tests covering:
 - API health and endpoints (`tests/test_health.py`, `tests/test_api.py` including `/health` and `/api/investigations/{id}`)
 - Parameterized Cypher query validation (`tests/test_graph_queries.py`)
 - Deterministic risk formulas and breach thresholds (`tests/test_risk_evaluator.py`)
 - End-to-end agent investigation workflow (`tests/test_investigation.py`)
 - Persistent memory delta comparator (`tests/test_memory.py`)
 
-All 18 tests pass deterministically in under 1 second without warnings:
+Run the real graph-backed tests after FalkorDB is reachable:
 ```bash
 pytest -q
 ```
+
+The test suite needs FalkorDB because it exercises real traversal and persistence; see troubleshooting if Docker is unavailable.
 
 ---
 
@@ -163,3 +182,4 @@ pytest -q
 1. **Synthetic Data Scope:** Data is generated for demonstration of cross-desk risk propagation.
 2. **Model Feed Boundaries:** Real-time Level-2 order book market depth and OTC derivative options delta hedges are currently flagged as identified data gaps rather than live exchange feeds.
 3. **No External Execution:** The system is an analytical decision-support and audit agent; it does not execute orders on exchange matching engines.
+4. **Position ownership model:** The synthetic graph has one position per asset. Books with several strategies holding the same asset need an explicit strategy-to-position ownership relationship before attribution can be complete.

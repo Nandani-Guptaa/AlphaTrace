@@ -26,7 +26,8 @@ Follow this 3-minute demonstration script for hackathon presentations and video 
    - Notice the **Red Warning Banner**: *"HIDDEN GRAPH CONTAGION IDENTIFIED"*.
    - Point to the metrics comparison:
      - Direct Exposure: **$3.0M**.
-     - Effective Correlated Cluster Exposure: **$6.22M** (Breaching Rule `RR-CONC-01` by $1.22M).
+     - Peer gross notional: **$4.9M**; deduplicated gross cluster notional: **$7.9M** (breaching `RR-CONC-01` by **$2.9M**).
+     - Correlation-adjusted stress indicator: **$7.452M**; it is a sensitivity indicator, not actual exposure or predicted loss.
 3. Open **Tab 1 (Executive Report & Evidence)**:
    - Review the Codified Rule Evaluations table showing `RR-DIR-01` PASSED, but `RR-CONC-01` and `RR-CONTAG-01` BREACHED.
    - Expand the evidence chain: view the exact Cypher path:
@@ -36,13 +37,14 @@ Follow this 3-minute demonstration script for hackathon presentations and video 
 1. Switch to **Tab 2 (Connected Graph Topology)**.
 2. Show the traced relationship table and the **Exposure Breakdown Across Books** bar chart.
 3. Emphasize:
-   *"Strategy B (Semiconductor Long-Bias) holds $3.5M in AVGO. Because NVDA and AVGO have a 0.92 correlation under this high-volatility regime, any sharp drawdown or liquidation in Strategy B directly spills over into Strategy A."*
+   *"The graph shows peer positions linked through correlated assets. The $7.9M figure is a distinct-position gross-notional aggregation; correlation helps identify the connected cluster but is not multiplied into concentration exposure."*
 
 ## Step 5: Persistent Investigation Memory & Actionable Decision (2:15 - 3:00)
 1. Switch to **Tab 3 (Agent Memory & Deltas)**:
    - Point out the delta engine comparison against baseline `INV-2026-BASE-001`.
-   - Show how Strategy B escalated AVGO exposure (+191%) and regime volatility increased, transforming a compliant strategy into a critical breach.
+   - Explain that AlphaTrace shows only fields present in both saved records; missing fields are insufficient evidence, not fabricated changes.
+   - Copy the investigation ID, restart FastAPI, then open `GET /api/investigations/{id}` to show that the same serialized report is retrieved from FalkorDB.
 2. Switch to **Tab 4 (Actionable Recommendation & Decision)**:
    - Show the proposed decision: `REDUCE_OR_HEDGE_EXPOSURE`.
-   - Point out the exact mathematical sizing: *"Trim NVDA by $1.22M or execute short SOXX ETF hedge to offset $1.5M cross-desk correlation."*
+   - Explain that recommendations are simulated supervisory suggestions. Any sizing requires independent review; the system does not execute trades.
    - Review historical precedent `INC-2024-TECH-SQUEEZE` which confirms that failing to hedge this exact pattern caused a -22% cascade in 2024.

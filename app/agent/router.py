@@ -52,6 +52,7 @@ def run_investigation(request: InvestigationRequest, db=None) -> InvestigationRe
     exposures = quant_results["exposures"]
     evaluations = quant_results["evaluations"]
     breaches_count = quant_results["breaches_count"]
+    insufficient_evidence = any(item.status == "INSUFFICIENT_EVIDENCE" for item in evaluations)
 
     # 6. Assemble Evidence Chain
     evidence_chain = build_evidence_chain(
@@ -68,27 +69,37 @@ def run_investigation(request: InvestigationRequest, db=None) -> InvestigationRe
         )
 
     # 8. Actionable Recommendation & Decision
-    decision_proposed = tool_propose_decision(strategy, exposures, breaches_count)
+    decision_proposed = tool_propose_decision(strategy, exposures, breaches_count, insufficient_evidence)
 
     # 9. Formulate Clear Narrative Summary
-    hidden_risk = exposures["effective_correlated_exposure"] > exposures["direct_exposure"] and breaches_count > 0
+    cluster_evaluation = next((item for item in evaluations if item.rule_id == "RR-CONC-01"), None)
+    hidden_risk = bool(cluster_evaluation and cluster_evaluation.status == "BREACHED")
     if hidden_risk:
         isolated_vs_graph = (
             f"ISOLATED PERSPECTIVE: PASS (Direct book is ${exposures['direct_exposure']:,.2f}, Drawdown is {strategy['drawdown']:.1f}%). "
-            f"GRAPH PERSPECTIVE: CRITICAL BREACH (Effective correlated exposure is ${exposures['effective_correlated_exposure']:,.2f}, "
-            f"revealing a hidden ${exposures['correlated_incremental']:,.2f} semiconductor cluster exposure across desk boundaries)."
+            f"GRAPH PERSPECTIVE: CRITICAL BREACH (Deduplicated gross cluster notional is ${exposures['gross_cluster_notional_usd']:,.2f}, "
+            f"revealing ${exposures['peer_connected_notional_usd']:,.2f} of peer-book notional across desk boundaries)."
         )
         exec_summary = (
             f"AlphaTrace graph investigation detected a critical modeled risk in '{strategy['name']}'. "
             f"While the strategy's direct positions appear compliant in isolation, a 2-hop FalkorDB traversal reveals "
             f"a 0.92 correlation to AVGO ($3.5M exposure held by 'STRAT-SEMI-LONG'). Under the current "
-            f"'{regime.get('label')}' regime, modeled cluster exposure reaches ${exposures['effective_correlated_exposure']:,.2f}, "
+            f"'{regime.get('label') if regime else 'unavailable'}' regime, gross cluster notional reaches ${exposures['gross_cluster_notional_usd']:,.2f}, "
             f"breaching Rule RR-CONC-01 ($5.0M limit). (Statistical correlation reflects historical co-movement patterns rather than guaranteed causation; all findings are synthetic simulations for risk modeling)."
+        )
+    elif insufficient_evidence:
+        isolated_vs_graph = (
+            f"Direct gross notional is ${exposures['direct_exposure']:,.2f}. Connected graph, drawdown, and/or regime evidence is unavailable, "
+            "so AlphaTrace makes no safety or compliance claim."
+        )
+        exec_summary = (
+            f"Strategy '{strategy['name']}' has been evaluated only where evidence exists. "
+            "No correlations, peer positions, regimes, or incidents were inferred from the uploaded portfolio."
         )
     else:
         isolated_vs_graph = (
-            f"Both isolated metrics (${exposures['direct_exposure']:,.2f}) and graph correlated exposure "
-            f"(${exposures['effective_correlated_exposure']:,.2f}) satisfy all risk thresholds."
+            f"Direct gross notional (${exposures['direct_exposure']:,.2f}) and graph-derived gross cluster notional "
+            f"(${exposures['gross_cluster_notional_usd']:,.2f}) do not breach the cluster rule."
         )
         exec_summary = f"Strategy '{strategy['name']}' is compliant with direct and correlated exposure limits."
 
@@ -106,10 +117,20 @@ def run_investigation(request: InvestigationRequest, db=None) -> InvestigationRe
         executive_summary=exec_summary,
         isolated_vs_graph_verdict=isolated_vs_graph,
         hidden_risk_detected=hidden_risk,
+        # Direct book metrics
         direct_exposure_usd=exposures["direct_exposure"],
+        direct_notional_usd=exposures["direct_notional_usd"],
+        direct_net_notional_usd=exposures["direct_net_notional_usd"],
+        # Peer / cluster metrics
+        peer_connected_notional_usd=exposures["peer_connected_notional_usd"],
+        peer_connected_net_notional_usd=exposures["peer_connected_net_notional_usd"],
+        gross_cluster_notional_usd=exposures["gross_cluster_notional_usd"],
+        net_cluster_notional_usd=exposures["net_cluster_notional_usd"],
+        # Correlation-adjusted stress estimates
         effective_correlated_exposure_usd=exposures["effective_correlated_exposure"],
+        correlation_adjusted_exposure_usd=exposures["correlation_adjusted_exposure_usd"],
         cluster_concentration_ratio=exposures["cluster_concentration_ratio"],
-        max_drawdown_pct=strategy["drawdown"],
+        max_drawdown_pct=strategy.get("drawdown") or 0.0,
         active_regime_volatility=regime["volatility"] if regime else 0.0,
         evaluations=evaluations,
         breaches_count=breaches_count,

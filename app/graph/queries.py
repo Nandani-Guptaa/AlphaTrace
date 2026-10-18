@@ -4,7 +4,9 @@ Zero raw string concatenation ensures Cypher injection immunity.
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+import uuid
 from app.graph.connection import get_db
 
 logger = logging.getLogger(__name__)
@@ -17,7 +19,7 @@ def get_all_strategies(db=None) -> List[Dict[str, Any]]:
     MATCH (s:Strategy)
     RETURN s.id AS id, s.name AS name, s.description AS description,
            s.pnl AS pnl, s.drawdown AS drawdown, s.sharpe AS sharpe,
-           s.updated_at AS updated_at
+           s.updated_at AS updated_at, s.source AS source
     ORDER BY s.id
     """
     rows = conn.query(cypher)
@@ -28,9 +30,9 @@ def get_all_strategies(db=None) -> List[Dict[str, Any]]:
             "name": r[1],
             "description": r[2],
             "pnl": float(r[3]),
-            "drawdown": float(r[4]),
+            "drawdown": float(r[4]) if r[4] is not None else None,
             "sharpe": float(r[5]),
-            "updated_at": r[6]
+            "updated_at": r[6], "source": r[7] or "DEMO"
         })
     return strategies
 
@@ -42,7 +44,7 @@ def get_strategy_by_id(strategy_id: str, db=None) -> Optional[Dict[str, Any]]:
     MATCH (s:Strategy {id: $strategy_id})
     RETURN s.id AS id, s.name AS name, s.description AS description,
            s.pnl AS pnl, s.drawdown AS drawdown, s.sharpe AS sharpe,
-           s.updated_at AS updated_at
+           s.updated_at AS updated_at, s.source AS source
     """
     rows = conn.query(cypher, {"strategy_id": strategy_id})
     if not rows:
@@ -53,9 +55,9 @@ def get_strategy_by_id(strategy_id: str, db=None) -> Optional[Dict[str, Any]]:
         "name": r[1],
         "description": r[2],
         "pnl": float(r[3]),
-        "drawdown": float(r[4]),
+        "drawdown": float(r[4]) if r[4] is not None else None,
         "sharpe": float(r[5]),
-        "updated_at": r[6]
+        "updated_at": r[6], "source": r[7] or "DEMO"
     }
 
 
@@ -87,6 +89,46 @@ def get_strategy_direct_positions(strategy_id: str, db=None) -> List[Dict[str, A
     return positions
 
 
+def create_custom_strategy(
+    strategy_name: str, user_id: str, positions: List[Dict[str, Any]], description: Optional[str] = None, db=None
+) -> Dict[str, Any]:
+    """Persist an isolated user portfolio without touching demo entities.
+
+    Custom Asset and Position IDs include the generated strategy ID, so an upload
+    cannot overwrite seeded assets or another user's portfolio.  No correlation,
+    regime, or incident relationships are created from uploaded data.
+    """
+    conn = db or get_db()
+    strategy_id = f"CUSTOM-{uuid.uuid4().hex[:12].upper()}"
+    now = datetime.now(timezone.utc).isoformat()
+    conn.query(
+        """
+        CREATE (s:Strategy {id: $id, name: $name, description: $description,
+            pnl: 0.0, drawdown: null, sharpe: 0.0, updated_at: $updated_at,
+            source: 'CUSTOM', owner_user_id: $user_id})
+        """,
+        {"id": strategy_id, "name": strategy_name, "description": description or "User-provided portfolio", "updated_at": now, "user_id": user_id},
+    )
+    conn.query("MERGE (u:User {id: $user_id}) ON CREATE SET u.display_name = 'Custom portfolio user'", {"user_id": user_id})
+    for offset, position in enumerate(positions, start=1):
+        asset_id = f"{strategy_id}-ASSET-{offset}"
+        position_id = f"{strategy_id}-POSITION-{offset}"
+        params = {**position, "asset_id": asset_id, "position_id": position_id, "strategy_id": strategy_id, "as_of": now}
+        conn.query(
+            """
+            CREATE (a:Asset {id: $asset_id, symbol: $symbol, asset_type: $asset_type,
+                sector: $sector, source: 'CUSTOM'})
+            CREATE (p:Position {id: $position_id, quantity: $quantity, exposure: $exposure,
+                currency: 'USD', as_of: $as_of, price: $price, source: 'CUSTOM'})
+            WITH a, p MATCH (s:Strategy {id: $strategy_id})
+            CREATE (s)-[:TRADES]->(a)
+            CREATE (a)-[:HAS_POSITION]->(p)
+            """,
+            params,
+        )
+    return {"id": strategy_id, "name": strategy_name, "position_count": len(positions), "source": "CUSTOM"}
+
+
 def get_connected_correlated_assets(strategy_id: str, db=None) -> List[Dict[str, Any]]:
     """Traverse graph relationships to discover connected, correlated assets held across the firm.
     Traverses:
@@ -96,9 +138,9 @@ def get_connected_correlated_assets(strategy_id: str, db=None) -> List[Dict[str,
     conn = db or get_db()
     cypher = """
     MATCH (s:Strategy {id: $strategy_id})-[:TRADES]->(directAsset:Asset)-[c:CORRELATED_WITH]->(corrAsset:Asset)
-    OPTIONAL MATCH (corrAsset)-[:HAS_POSITION]->(pos:Position)
-    OPTIONAL MATCH (otherStrat:Strategy)-[:TRADES]->(corrAsset)
+    MATCH (otherStrat:Strategy)-[:TRADES]->(corrAsset)
     WHERE otherStrat.id <> $strategy_id
+    OPTIONAL MATCH (corrAsset)-[:HAS_POSITION]->(pos:Position)
     RETURN directAsset.symbol AS direct_symbol,
            corrAsset.symbol AS correlated_symbol,
            corrAsset.asset_type AS correlated_type,
@@ -124,7 +166,17 @@ def get_connected_correlated_assets(strategy_id: str, db=None) -> List[Dict[str,
             "other_strategy_id": r[7],
             "other_strategy_name": r[8]
         })
-    return connected
+    # A graph may contain more than one route to one peer position.  Return a
+    # deterministic evidence record once; the evaluator also defensively
+    # deduplicates by position_id before aggregation.
+    unique = {}
+    for item in connected:
+        position_id = item.get("position_id")
+        if position_id:
+            unique.setdefault(position_id, item)
+        else:
+            unique.setdefault((item["direct_symbol"], item["correlated_symbol"], item.get("other_strategy_id")), item)
+    return list(unique.values())
 
 
 def get_strategy_market_regime(strategy_id: str, db=None) -> Optional[Dict[str, Any]]:
@@ -317,10 +369,12 @@ def get_all_investigations(limit: int = 20, db=None) -> List[Dict[str, Any]]:
                 res_data = {}
         history.append({
             "id": r[0],
+            "investigation_id": r[0],  # alias used by dashboard & verification
             "strategy_id": r[1],
             "user_id": r[2],
             "question": r[3],
             "created_at": r[4],
+            "timestamp": r[4],  # alias for dashboard display
             "status": r[5],
             "result_summary": res_data.get("executive_summary", "")
         })
@@ -347,13 +401,19 @@ def get_investigation_by_id(investigation_id: str, db=None) -> Optional[Dict[str
         except Exception:
             result_data = {"raw": r[6]}
 
-    return {
-        "id": r[0],
-        "strategy_id": r[1],
-        "user_id": r[2],
-        "question": r[3],
-        "created_at": r[4],
-        "status": r[5],
-        "result_data": result_data
-    }
+    # New investigations store a complete serialized InvestigationReport.  Return
+    # that report directly so retrieval has the same contract as investigation;
+    # retain a safe fallback for legacy/minimal saved records.
+    if isinstance(result_data, dict) and result_data:
+        return {
+            **result_data,
+            "id": result_data.get("id", r[0]),
+            "investigation_id": result_data.get("investigation_id", r[0]),
+            "strategy_id": result_data.get("strategy_id", r[1]),
+            "user_id": result_data.get("user_id", r[2]),
+            "question": result_data.get("question", r[3]),
+            "created_at": result_data.get("created_at", r[4]),
+            "status": result_data.get("status", r[5]),
+        }
+    return {"id": r[0], "investigation_id": r[0], "strategy_id": r[1], "user_id": r[2], "question": r[3], "created_at": r[4], "status": r[5]}
 

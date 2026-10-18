@@ -52,28 +52,36 @@ def tool_evaluate_quant_risks(
 def tool_propose_decision(
     strategy: Dict[str, Any],
     exposures: Dict[str, float],
-    breaches_count: int
+    breaches_count: int,
+    insufficient_evidence: bool = False,
 ) -> Decision:
     """Generate deterministic, actionable risk decision based on mathematical findings."""
     dec_id = f"DEC-{uuid.uuid4().hex[:8].upper()}"
     now_str = datetime.now(timezone.utc).isoformat()
 
     cluster_limit = 5000000.0
-    effective_exp = exposures["effective_correlated_exposure"]
+    gross_cluster_notional = exposures["gross_cluster_notional_usd"]
 
-    if effective_exp > cluster_limit:
-        excess = effective_exp - cluster_limit
+    if gross_cluster_notional > cluster_limit:
+        excess = gross_cluster_notional - cluster_limit
         action = "REDUCE_OR_HEDGE_EXPOSURE"
         reason = (
             f"Simulated Risk Suggestion (Non-Execution): Aggregate correlated semiconductor cluster exposure is modeled at "
-            f"${effective_exp:,.2f}, exceeding the $5.0M portfolio limit by ${excess:,.2f}. "
+            f"${gross_cluster_notional:,.2f}, exceeding the $5.0M portfolio limit by ${excess:,.2f}. "
             f"(Note: Statistical correlation reflects co-movement under historical regimes, not proof of causation or guaranteed losses. All recommendations are simulated suggestions, not executed trades). "
-            f"Suggested simulated adjustments for review: 1) Model trimming direct NVDA exposure by ${excess:,.2f}, or 2) Model short SOXX ETF hedge to offset modeled cross-desk correlation."
+            f"Suggested simulated adjustments for review: model reducing gross cluster notional by at least ${excess:,.2f}; sizing and feasibility require independent review."
         )
         status = "PENDING"
     elif breaches_count > 0:
         action = "FLAG_FOR_MONITORING"
         reason = f"Strategy has {breaches_count} risk rule breach(es) under current market conditions. Increased supervisory monitoring required."
+        status = "PENDING"
+    elif insufficient_evidence:
+        action = "REQUEST_ADDITIONAL_RISK_CONTEXT"
+        reason = (
+            "No confirmed breach was found in the available data, but this portfolio cannot be approved as safe: "
+            "correlation, regime, incident, or performance context is unavailable."
+        )
         status = "PENDING"
     else:
         action = "APPROVE_CURRENT_ALLOCATION"

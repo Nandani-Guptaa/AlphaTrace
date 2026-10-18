@@ -3,10 +3,12 @@ Streamlit visual application demonstrating connected graph risk discovery.
 """
 
 import json
+from io import StringIO
 from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
+from app.portfolio import parse_csv_positions
 
 # Configure Page
 st.set_page_config(
@@ -65,7 +67,7 @@ def fetch_api(endpoint: str, method: str = "GET", json_data: dict = None):
             resp = requests.get(url, timeout=5)
         else:
             resp = requests.post(url, json=json_data, timeout=10)
-        if resp.status_code == 200:
+        if resp.status_code in (200, 201):
             return resp.json(), None
         return None, f"HTTP {resp.status_code}: {resp.text}"
     except Exception as e:
@@ -97,6 +99,7 @@ st.markdown("---")
 # Sidebar Configuration
 with st.sidebar:
     st.header("🔍 Investigation Control")
+    portfolio_mode = st.segmented_control("Portfolio mode", ["Demo Scenario", "Custom Portfolio"], default="Demo Scenario")
 
     strategies_data, strat_err = fetch_api("strategies")
     if not strategies_data:
@@ -107,9 +110,49 @@ with st.sidebar:
             {"id": "STRAT-MACRO-HEDGE", "name": "Macro Hedged Diversified"}
         ]
 
-    strat_options = {s["name"]: s["id"] for s in strategies_data}
-    selected_name = st.selectbox("Select Strategy to Investigate", list(strat_options.keys()), index=0)
-    selected_strat_id = strat_options[selected_name]
+    selected_strat_id = None
+    custom_submit = False
+    if portfolio_mode == "Demo Scenario":
+        demo_strategies = [s for s in strategies_data if s.get("source", "DEMO") != "CUSTOM"]
+        strat_options = {s["name"]: s["id"] for s in demo_strategies}
+        selected_name = st.selectbox("Select demo strategy", list(strat_options.keys()), index=0)
+        selected_strat_id = strat_options[selected_name]
+    else:
+        st.caption("CSV columns: symbol, quantity, price; optional: asset_type, sector. Negative quantity represents a short position; price must be positive.")
+        with st.form("custom_portfolio_form"):
+            custom_name = st.text_input("Custom strategy name", key="custom_strategy_name")
+            custom_user = st.text_input("Portfolio owner ID", value="USR-CUSTOM", key="custom_user_id")
+            source_mode = st.segmented_control("Position input", ["CSV upload", "Manual entry"], default="CSV upload")
+            uploaded = st.file_uploader("Upload positions CSV", type="csv", max_upload_size=2, key="portfolio_csv") if source_mode == "CSV upload" else None
+            manual = None
+            if source_mode == "Manual entry":
+                manual = st.data_editor(
+                    pd.DataFrame([{"symbol": "", "quantity": 0.0, "price": 0.0, "asset_type": "", "sector": ""}]),
+                    num_rows="dynamic", key="portfolio_manual_positions", hide_index=True,
+                )
+            custom_submit = st.form_submit_button("Create and investigate custom portfolio", type="primary", width="stretch")
+        if custom_submit:
+            try:
+                if uploaded is not None:
+                    rows = parse_csv_positions(uploaded.getvalue().decode("utf-8"))
+                elif manual is not None:
+                    rows = manual.dropna(how="all").to_dict("records")
+                else:
+                    raise ValueError("Upload a CSV or enter at least one position.")
+                if not rows:
+                    raise ValueError("Portfolio file or table is empty.")
+                payload = {"strategy_name": custom_name, "user_id": custom_user, "positions": rows}
+                created, err = fetch_api("custom-portfolios", method="POST", json_data=payload)
+                if err:
+                    st.error(f"Portfolio validation failed: {err}")
+                else:
+                    st.session_state.custom_strategy_id = created["id"]
+                    st.success(f"Created isolated custom strategy {created['id']} with {created['position_count']} positions.")
+            except (UnicodeDecodeError, pd.errors.ParserError, ValueError) as exc:
+                st.error(f"Portfolio validation failed: {exc}")
+        selected_strat_id = st.session_state.get("custom_strategy_id")
+        if selected_strat_id:
+            st.caption(f"Active custom strategy: `{selected_strat_id}`")
 
     preset_questions = [
         "Why is Strategy A risky and does examining connected positions reveal hidden exposure?",
@@ -120,28 +163,22 @@ with st.sidebar:
     ]
     selected_question = st.selectbox("Investigation Question", preset_questions, index=0)
 
-    compare_memory = st.checkbox("Enable Temporal Memory Comparison", value=True)
+    compare_memory = st.checkbox("Enable Temporal Memory Comparison", value=portfolio_mode == "Demo Scenario")
 
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        run_btn = st.button("🚀 Investigate", type="primary", use_container_width=True)
+        run_btn = st.button("🚀 Investigate", type="primary", width="stretch", disabled=not selected_strat_id)
     with col_btn2:
-        reseed_btn = st.button("🔄 Reseed DB", use_container_width=True)
-
-    if reseed_btn:
-        with st.spinner("Reseeding FalkorDB..."):
-            res, err = fetch_api("seed", method="POST")
-            if err:
-                st.error(f"Reseed failed: {err}")
-            else:
-                st.success(f"Graph reset: {res.get('nodes')} nodes, {res.get('relationships')} edges!")
-                st.rerun()
+        st.caption("Seeding is intentionally not available from the dashboard because it replaces graph data.")
 
     st.markdown("---")
-    st.info("💡 **Scenario Guide**: Strategy `Quantum Momentum Alpha` appears completely safe in isolation (4.2% drawdown, direct exposure $3.0M under $5.0M limit). AlphaTrace's graph traversal exposes a hidden $3.25M correlated semiconductor cluster exposure held by peer desks!")
+    st.info("Custom uploads create isolated graph entities. AlphaTrace does not infer correlations, peer books, regimes, or incidents from a CSV; unavailable context remains unknown.")
 
 
 # Main Investigation Execution
+if not selected_strat_id:
+    st.info("Create a custom portfolio or select a demo scenario to investigate.")
+    st.stop()
 if "report" not in st.session_state or run_btn or selected_strat_id != st.session_state.get("active_strat_id"):
     with st.spinner("Agent traversing FalkorDB graph and calculating exposures..."):
         report_data, err = fetch_api("investigate", method="POST", json_data={
@@ -159,14 +196,17 @@ if "report" not in st.session_state or run_btn or selected_strat_id != st.sessio
 report = st.session_state.report
 
 # Executive Contrast Banner
+has_insufficient_evidence = any(item.get("status") == "INSUFFICIENT_EVIDENCE" for item in report.get("evaluations", []))
 if report.get("hidden_risk_detected"):
     st.markdown(f"""
     <div class="banner-warning">
         <h4 style="margin:0; color:#ff4b4b;">⚠️ HIDDEN GRAPH CONTAGION IDENTIFIED</h4>
         <p style="margin:5px 0 0 0;"><strong>Isolated View:</strong> Compliant direct book (${report.get('direct_exposure_usd'):,.2f}) with low drawdown ({report.get('max_drawdown_pct'):.1f}%).<br>
-        <strong>Graph Traversed View:</strong> 2-hop correlation traversal reveals <strong>${report.get('effective_correlated_exposure_usd'):,.2f}</strong> aggregate semiconductor cluster exposure breaching Rule RR-CONC-01 by <strong>${report.get('effective_correlated_exposure_usd') - 5000000:,.2f}</strong>!</p>
+        <strong>Graph Traversed View:</strong> 2-hop traversal reveals <strong>${report.get('gross_cluster_notional_usd'):,.2f}</strong> deduplicated gross cluster notional. The correlation-adjusted stress indicator is shown separately and is not treated as exposure.</p>
     </div>
     """, unsafe_allow_html=True)
+elif has_insufficient_evidence:
+    st.warning("No confirmed connected-risk breach is reported because required graph or market context is unavailable. This is not an approval or safety finding.")
 else:
     st.markdown(f"""
     <div class="banner-success">
@@ -184,25 +224,25 @@ with m1:
         "Within $5.0M Book Limit"
     )
 with m2:
-    corr_exp = report.get('effective_correlated_exposure_usd', 0)
-    delta_val = f"+${corr_exp - report.get('direct_exposure_usd', 0):,.0f} Correlated"
+    peer_notional = report.get('peer_connected_notional_usd', 0)
     st.metric(
-        "Correlated Cluster Exp.",
-        f"${corr_exp:,.0f}",
-        delta_val,
-        delta_color="inverse" if corr_exp > 5000000 else "normal"
+        "Peer Gross Notional",
+        f"${peer_notional:,.0f}",
+        "Distinct connected positions"
     )
 with m3:
+    gross_cluster = report.get('gross_cluster_notional_usd', 0)
     st.metric(
-        "Cluster Ratio",
-        f"{report.get('cluster_concentration_ratio', 1.0):.2f}x",
-        "Over direct capital"
+        "Gross Cluster Notional",
+        f"${gross_cluster:,.0f}",
+        "RR-CONC-01 input",
+        delta_color="inverse" if report.get("hidden_risk_detected") else "normal"
     )
 with m4:
     st.metric(
-        "Regime Volatility",
-        f"{report.get('active_regime_volatility', 0):.1f}",
-        "High Vol Dispersion" if report.get('active_regime_volatility', 0) > 30 else "Normal"
+        "Correlation Stress Indicator",
+        f"${report.get('correlation_adjusted_exposure_usd', 0):,.0f}",
+        "Sensitivity, not exposure"
     )
 with m5:
     breaches = report.get('breaches_count', 0)

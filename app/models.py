@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ==========================================
@@ -115,36 +115,53 @@ class InvestigationReport(BaseModel):
     user_id: str
     created_at: str
     status: str  # COMPLETED, FAILED, IN_PROGRESS
-    
+
     # Executive Summary & Differentiator
     executive_summary: str
     isolated_vs_graph_verdict: str
     hidden_risk_detected: bool
-    
-    # Quantitative Risk Metrics
-    direct_exposure_usd: float
-    effective_correlated_exposure_usd: float
-    cluster_concentration_ratio: float
+
+    # Quantitative Risk Metrics (Explicitly Delineated)
+    direct_exposure_usd: float  # Notional USD directly deployed by this strategy
+    direct_notional_usd: float = 0.0  # Actual direct capital deployed (same as above, alias)
+    direct_net_notional_usd: float = 0.0
+    peer_connected_notional_usd: float = 0.0  # Sum of peer-desk gross notional on correlated assets
+    peer_connected_net_notional_usd: float = 0.0
+    gross_cluster_notional_usd: float = 0.0  # direct + peer combined gross notional
+    net_cluster_notional_usd: float = 0.0
+    effective_correlated_exposure_usd: float  # Correlation-adjusted modeled cluster exposure
+    correlation_adjusted_exposure_usd: float = 0.0  # Explicit correlation-weighted exposure estimate
+    cluster_concentration_ratio: float  # effective_correlated_exposure / direct_exposure
     max_drawdown_pct: float
     active_regime_volatility: float
-    
+
     # Deterministic Evaluation
     evaluations: List[RuleEvaluationResult]
     breaches_count: int
-    
+
     # Evidence & Traversal Details
     evidence_chain: List[EvidenceItem]
     connected_assets: List[Dict[str, Any]]
     connected_strategies: List[Dict[str, Any]]
     historical_incidents: List[Dict[str, Any]]
-    
+
     # Memory & Change Detection
     memory_comparison: Optional[InvestigationComparison] = None
-    
+
     # Actionable Recommendations
     recommended_action: str
     decision_proposed: Optional[Decision] = None
     missing_data_gaps: List[str] = []
+
+    # Stable alias exposed in all API responses so both `id` and
+    # `investigation_id` can be used interchangeably by clients.
+    investigation_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _set_investigation_id(self) -> "InvestigationReport":
+        if self.investigation_id is None:
+            self.investigation_id = self.id
+        return self
 
 
 class InvestigationRequest(BaseModel):
@@ -152,3 +169,26 @@ class InvestigationRequest(BaseModel):
     question: str = "Why is Strategy A risky and does examining connected positions reveal hidden exposure?"
     user_id: str = "USR-RISK-LEAD-01"
     compare_with_previous: bool = True
+
+
+class CustomPositionInput(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32)
+    quantity: float
+    price: float
+    asset_type: Optional[str] = Field(default=None, max_length=64)
+    sector: Optional[str] = Field(default=None, max_length=64)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("symbol is required")
+        return value
+
+
+class CustomPortfolioRequest(BaseModel):
+    strategy_name: str = Field(min_length=1, max_length=120)
+    user_id: str = Field(default="USR-CUSTOM", min_length=1, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=500)
+    positions: List[CustomPositionInput] = Field(min_length=1, max_length=500)

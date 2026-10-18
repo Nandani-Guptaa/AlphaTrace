@@ -12,7 +12,8 @@ from app.graph.connection import get_db
 from app.graph import queries
 from app.graph.seed import seed_database
 from app.agent.router import run_investigation
-from app.models import InvestigationReport, InvestigationRequest
+from app.models import CustomPortfolioRequest, InvestigationReport, InvestigationRequest
+from app.portfolio import normalize_positions
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("alphatrace")
@@ -61,6 +62,24 @@ def get_strategy(strategy_id: str) -> Dict[str, Any]:
     if not strat:
         raise HTTPException(status_code=404, detail=f"Strategy '{strategy_id}' not found.")
     return strat
+
+
+@app.post("/api/custom-portfolios", status_code=201)
+def create_custom_portfolio(request: CustomPortfolioRequest) -> Dict[str, Any]:
+    """Create an isolated custom strategy from validated user-provided positions."""
+    try:
+        positions = normalize_positions([position.model_dump() for position in request.positions])
+        return queries.create_custom_strategy(
+            strategy_name=request.strategy_name.strip(),
+            user_id=request.user_id.strip(),
+            description=request.description,
+            positions=positions,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.error("Custom portfolio creation failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Custom portfolio creation failed.")
 
 
 @app.get("/api/strategies/{strategy_id}/positions")
@@ -164,17 +183,17 @@ def get_strategy_graph_subnetwork(strategy_id: str) -> Dict[str, Any]:
     return {"nodes": nodes, "edges": edges}
 
 
-@app.post("/api/investigate", response_model=InvestigationReport)
-def investigate_strategy(request: InvestigationRequest) -> InvestigationReport:
+@app.post("/api/investigate")
+def investigate_strategy(request: InvestigationRequest) -> dict:
     """Run an explainable risk investigation for the requested strategy."""
     try:
         report = run_investigation(request)
-        return report
+        return report.model_dump()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Investigation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal investigation error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal investigation error.")
 
 
 @app.get("/api/investigations")
@@ -193,14 +212,19 @@ def get_investigation(investigation_id: str) -> Dict[str, Any]:
 
 
 @app.post("/api/seed")
-def reseed() -> Dict[str, Any]:
-    """Reseed the graph database with synthetic test scenario data."""
+def reseed(confirm_destructive_reset: bool = Query(default=False)) -> Dict[str, Any]:
+    """Destructively replace graph data with the documented synthetic scenario."""
+    if not confirm_destructive_reset:
+        raise HTTPException(
+            status_code=400,
+            detail="Seeding deletes all graph data. Repeat with confirm_destructive_reset=true to proceed."
+        )
     try:
         res = seed_database()
         return res
     except Exception as e:
         logger.error(f"Reseed failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Synthetic graph seeding failed.")
 
 
 if __name__ == "__main__":

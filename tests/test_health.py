@@ -1,4 +1,4 @@
-def test_api_health(client):
+def test_api_health(client, live_graph):
     """Test health endpoint responds and reports FalkorDB connection status."""
     response = client.get("/api/health")
     assert response.status_code == 200

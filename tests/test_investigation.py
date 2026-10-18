@@ -2,7 +2,7 @@ from app.agent.router import run_investigation
 from app.models import InvestigationRequest
 
 
-def test_investigate_quantum_alpha():
+def test_investigate_quantum_alpha(live_graph):
     """Verify investigation of primary test scenario reveals hidden risk and proposes decision."""
     req = InvestigationRequest(
         strategy_id="STRAT-QUANTUM-ALPHA",
@@ -22,7 +22,7 @@ def test_investigate_quantum_alpha():
     assert len(report.evidence_chain) >= 3
 
 
-def test_investigate_macro_hedge():
+def test_investigate_macro_hedge(live_graph):
     """Verify macro hedged strategy is clean with zero breaches."""
     req = InvestigationRequest(
         strategy_id="STRAT-MACRO-HEDGE",

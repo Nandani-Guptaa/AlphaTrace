@@ -4,22 +4,25 @@ This document details the quantitative formulas, risk rule specifications, and d
 
 ## Mathematical Exposure Definitions
 
-### 1. Direct Exposure
-$$\text{DirectExposure}(S) = \sum_{p \in \text{Positions}(S)} \text{Exposure}(p)$$
+### 1. Direct gross and net notional
+$$\text{DirectGross}(S) = \sum_{p \in \text{distinct Positions}(S)} |\text{Exposure}(p)|$$
 
-### 2. Effective Correlated Exposure (Cluster Concentration)
-When Strategy $S$ trades asset $A$, and asset $A$ is correlated with peer assets $C_i$ held by other strategies $S_k$, the effective aggregate exposure is:
+$$\text{DirectNet}(S) = \sum_{p \in \text{distinct Positions}(S)} \text{Exposure}(p)$$
 
-$$\text{EffectiveCorrelatedExposure}(S) = \text{DirectExposure}(S) + \sum_{i} \left( r(A, C_i) \times \text{Exposure}(C_i) \right)$$
+### 2. Gross correlated-cluster notional (concentration-rule input)
+$$\text{GrossCluster}(S) = \text{DirectGross}(S) + \sum_{i \in \text{distinct peer positions}} |\text{Exposure}(C_i)|$$
 
-where:
-- $r(A, C_i)$ is the correlation coefficient under the active market regime ($0.0 \le r \le 1.0$).
-- $\text{Exposure}(C_i)$ is the dollar exposure held in asset $C_i$ across the firm.
+Position IDs are deduplicated before aggregation, so multiple graph paths cannot inflate the result.
 
-### 3. Cluster Concentration Ratio
-$$\text{ClusterRatio}(S) = \frac{\text{EffectiveCorrelatedExposure}(S)}{\text{DirectExposure}(S)}$$
+### 3. Correlation-adjusted stress indicator (not exposure)
+$$\text{StressIndicator}(S) = \text{DirectGross}(S) + \sum_i |r(A, C_i)| \times |\text{Exposure}(C_i)|$$
 
-### 4. Cross-Strategy Contagion Correlation Index
+This is a sensitivity indicator only. Correlation is not a portfolio weight, causal relationship, or predicted loss.
+
+### 4. Cluster Concentration Ratio
+$$\text{ClusterRatio}(S) = \frac{\text{GrossCluster}(S)}{\text{DirectGross}(S)}$$
+
+### 5. Cross-Strategy Contagion Correlation Index
 $$\text{ContagionIndex}(S) = \max_{i} \left( r(A, C_i) \right)$$
 
 ---
@@ -45,8 +48,9 @@ Under `STRAT-QUANTUM-ALPHA`:
 | Direct Single-Asset Max | $1,800,000 (NVDA) | $1,800,000 | **PASS** ($\le \$2.5\text{M}$) |
 | Strategy Drawdown | 4.2% | 4.2% (Historical precedent: 22%) | **PASS** ($\le 15\%$) |
 | Direct Book Total | $3,000,000 | $3,000,000 | **PASS** ($\le \$5.0\text{M}$) |
-| Aggregate Cluster Exposure | **Hidden ($0)** | **$6,220,000** | **CRITICAL BREACH** ($+\$1.22\text{M}$) |
+| Gross Cluster Notional | **Unavailable** | **$7,900,000** | **CRITICAL BREACH** ($+\$2.90\text{M}$) |
+| Correlation-adjusted stress indicator | **Unavailable** | **$7,452,000** | Sensitivity indicator only; not used as exposure |
 | Cross-Desk Contagion Index | **Hidden (N/A)** | **0.92 (AVGO in Strat B)** | **HIGH BREACH** ($> 0.75$) |
 | Active Regime Volatility | Unadjusted | 34.2 (High Volatility) | **WARNING BREACH** ($> 30.0$) |
 
-**Conclusion:** A strategy-only risk management check misses a $3.22M unhedged cross-strategy concentration that violates firm risk limits.
+**Conclusion:** The strategy-only view cannot see $4.9M of peer gross notional. The graph-enabled view finds a $7.9M deduplicated gross cluster, which breaches the configured $5.0M concentration limit.
